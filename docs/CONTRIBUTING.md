@@ -26,17 +26,47 @@ Diffnote는 웹 기반 문서 비교 서비스입니다.
 
 ## 기술 스택
 
+### 코어 스택
+
 | 영역 | 기술 | 버전 | 선택 이유 |
 |------|------|------|-----------|
-| **Framework** | Next.js | 15 (App Router) | Vercel 최적화, SSR/ISR |
-| **Language** | TypeScript | 최신 | 타입 안정성, 개발자 경험 |
-| **Styling** | Tailwind CSS + shadcn/ui | 최신 | 빠른 개발, 일관된 디자인 시스템 |
-| **PDF 파싱** | pdf.js | 최신 | 클라이언트 사이드 처리 |
-| **DOCX 파싱** | mammoth.js | 최신 | 클라이언트 사이드 처리 |
-| **Diff 엔진** | diff-match-patch | 최신 | Google 검증, 성능 우수 |
-| **상태관리** | Zustand | 최신 | 경량, 간단한 API |
+| **Framework** | Next.js | 16.1 (App Router) | Turbopack 안정화, 새 캐싱 시스템, 라우팅 최적화 |
+| **Runtime** | React | 19.2 | 최신 성능 개선, Activity 컴포넌트 |
+| **Language** | TypeScript | 5.x | 타입 안정성, 개발자 경험 |
+| **Styling** | Tailwind CSS + shadcn/ui | latest | 빠른 개발, 일관된 디자인 시스템 |
+| **PDF 파싱** | pdf.js | latest | 동적 import로 번들 최적화 |
+| **DOCX 파싱** | mammoth.js | latest | 클라이언트 사이드 처리 |
+| **Diff 엔진** | diff-match-patch | latest | Google 검증, 성능 우수 |
+| **상태관리** | React Context | - | MVP는 Context로 충분, 필요시 Zustand |
 | **배포** | Vercel | - | Git 연동 자동 배포 |
-| **DB** | Vercel KV / Postgres | - | 공유 링크 저장 (Phase 2) |
+
+### 개발 도구
+
+| 영역 | 기술 | 용도 |
+|------|------|------|
+| **테스트** | Vitest + React Testing Library | 단위/컴포넌트 테스트 |
+| **통합 테스트** | Vitest | 파서 + diff 엔진 통합 |
+| **E2E 테스트** | Playwright | 사용자 시나리오 |
+| **성능 테스트** | Vitest Benchmark | 대용량 파일 처리 |
+| **린팅** | ESLint + Prettier | 코드 품질 관리 |
+| **Git Hooks** | Husky + lint-staged | Pre-commit 자동화 |
+
+### 모니터링 & 보안
+
+| 영역 | 기술 | 용도 |
+|------|------|------|
+| **에러 트래킹** | Sentry | 런타임 에러 모니터링 |
+| **성능 분석** | Vercel Analytics | Core Web Vitals |
+| **사용자 분석** | Google Analytics 4 | MAU/DAU, 전환율 |
+| **XSS 방지** | DOMPurify | 사용자 입력 sanitization |
+
+### 데이터베이스 (단계별)
+
+| Phase | 기술 | 용도 |
+|------|------|------|
+| **Phase 1** | 없음 | 클라이언트 처리만 |
+| **Phase 2** | Vercel KV | 공유 링크 (압축 저장) |
+| **Phase 3** | Vercel Postgres + Blob | 팀 관리, 파일 저장 |
 
 ## 프로젝트 구조
 
@@ -114,15 +144,17 @@ feat: 기능 추가
 
 ### 브랜치 전략
 
-**1인 개발이므로 PR 없이 바로 메인 브랜치에 커밋**
+**1인 개발이지만 품질 보장을 위해 CI/CD 파이프라인 활용**
 
 - `main`: 프로덕션 배포 브랜치
-- 필요시 기능 브랜치 생성 후 작업 완료 시 즉시 머지
+- 모든 푸시 전 자동 테스트 실행 (GitHub Actions)
+- 테스트 통과 후 Vercel 자동 배포
 
 ### 커밋 후 즉시 Push
 
 - 커밋 완료 후 바로 `git push` 실행
 - 로컬에 커밋을 쌓아두지 않음
+- Push 시 자동으로 CI/CD 파이프라인 실행
 
 ## 코딩 컨벤션
 
@@ -219,6 +251,71 @@ npm run start
 git push origin main
 ```
 
+### 4. CI/CD 파이프라인
+
+**GitHub Actions로 자동화된 품질 검증**
+
+모든 `git push`마다 자동 실행:
+
+```yaml
+# .github/workflows/ci.yml
+name: CI
+on: [push, pull_request]
+
+jobs:
+  quality-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+```
+
+**로컬 Pre-commit Hook (Husky)**
+
+커밋 전 자동 실행:
+
+```json
+// package.json
+{
+  "scripts": {
+    "lint": "eslint . --max-warnings 0",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepare": "husky install"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": ["eslint --fix", "prettier --write"],
+    "*.{json,md}": ["prettier --write"]
+  }
+}
+```
+
+**실패 시 대응:**
+
+1. 린트 에러: `npm run lint -- --fix` 실행
+2. 타입 에러: TypeScript 에러 수정
+3. 테스트 실패: 테스트 수정 또는 코드 수정
+4. 빌드 실패: 빌드 에러 해결
+
 ## 핵심 아키텍처 원칙
 
 ### 1. 클라이언트 중심 처리
@@ -246,7 +343,71 @@ git push origin main
 - **Lazy Loading**: 컴포넌트 코드 스플리팅
 - **Memoization**: React.memo, useMemo 적극 활용
 
-### 4. 접근성 (a11y)
+### 4. 보안 우선
+
+> **사용자 데이터 보호가 최우선입니다.**
+
+**필수 보안 조치:**
+
+```typescript
+// 1. 파일 타입 검증
+const ALLOWED_TYPES = {
+  'text/plain': '.txt',
+  'application/pdf': '.pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx'
+};
+
+function validateFile(file: File): boolean {
+  return Object.keys(ALLOWED_TYPES).includes(file.type);
+}
+
+// 2. XSS 방지 - DOMPurify 사용
+import DOMPurify from 'dompurify';
+const sanitized = DOMPurify.sanitize(userInput);
+
+// 3. 파일 크기 제한
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
+// 4. 공유 링크 보안 (Phase 2)
+import { nanoid } from 'nanoid';
+const shareId = nanoid(21); // 추측 불가능한 ID
+const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7일 만료
+```
+
+### 5. 성능 최적화
+
+**메모리 관리:**
+
+```typescript
+// 1. 동적 import로 번들 크기 최적화
+const parsePDF = async (file: File) => {
+  const pdfjs = await import('pdfjs-dist');
+  // ...
+};
+
+// 2. Virtual Scrolling (react-window)
+import { FixedSizeList } from 'react-window';
+
+// 3. 메모리 해제
+useEffect(() => {
+  return () => {
+    diffResultRef.current = null; // cleanup
+  };
+}, []);
+```
+
+**Web Worker 활용:**
+
+```typescript
+// lib/workers/diff.worker.ts
+self.onmessage = (e) => {
+  const { text1, text2 } = e.data;
+  const result = performDiff(text1, text2);
+  self.postMessage(result);
+};
+```
+
+### 6. 접근성 (a11y)
 
 - 키보드 내비게이션 지원
 - ARIA 속성 적절히 사용
